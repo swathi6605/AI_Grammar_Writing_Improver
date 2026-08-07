@@ -1,9 +1,89 @@
 import html
 import json
 import os
+import sys
+from pathlib import Path
+
+root_dir = Path(__file__).resolve().parent
+sys.path.insert(0, str(root_dir))
+
 import streamlit as st
 import streamlit.components.v1 as components
-from groq_helper import improve_writing
+
+if "GROQ_API_KEY" not in os.environ:
+    try:
+        if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+            os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        pass
+
+try:
+    from groq_helper import improve_writing as helper_improve_writing
+except Exception:
+    helper_improve_writing = None
+
+
+def improve_writing(text, tone, level):
+    if helper_improve_writing is not None:
+        return helper_improve_writing(text, tone, level)
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        try:
+            if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                api_key = st.secrets["GROQ_API_KEY"]
+        except Exception:
+            pass
+
+    if not api_key:
+        raise RuntimeError(
+            "GROQ_API_KEY is not set. Add it to a .env file or configure it as a Streamlit secret."
+        )
+
+    from groq import Groq
+
+    client = Groq(api_key=api_key)
+    prompt = f"""
+You are an expert English writing assistant.
+
+The user wants:
+- Tone: {tone}
+- Language Level: {level}
+
+Analyze the following text and return your response in exactly this format:
+
+## Corrected Text
+
+(corrected paragraph)
+
+## Grammar Mistakes
+
+- Mistake → Correction : Explanation
+
+## Improved Version
+
+(improved paragraph)
+
+## Writing Tips
+
+- Tip 1
+- Tip 2
+- Tip 3
+
+User Text:
+{text}
+"""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+    )
+    return response.choices[0].message.content
 
 
 def parse_response_sections(response_text):
@@ -38,9 +118,11 @@ st.write(
     "Improve grammar, clarity, writing style, and tone using AI."
 )
 
-if os.getenv("GROQ_API_KEY") is None:
+if os.getenv("GROQ_API_KEY") is None and not (
+    hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets
+):
     st.error(
-        "Missing GROQ_API_KEY environment variable. Create a `.env` file or set GROQ_API_KEY before clicking Improve Writing."
+        "Missing GROQ_API_KEY. Add it to a .env file or configure it as a Streamlit secret before clicking Improve Writing."
     )
 
 text = st.text_area(
