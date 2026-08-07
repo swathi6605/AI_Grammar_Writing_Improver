@@ -10,35 +10,39 @@ sys.path.insert(0, str(root_dir))
 import streamlit as st
 import streamlit.components.v1 as components
 
-if "GROQ_API_KEY" not in os.environ:
+
+def load_groq_api_key():
     try:
-        if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
-            os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+        from dotenv import load_dotenv
+
+        load_dotenv()
     except Exception:
         pass
 
-try:
-    from groq_helper import improve_writing as helper_improve_writing
-except Exception:
-    helper_improve_writing = None
+    api_key = os.getenv("GROQ_API_KEY")
+    if api_key:
+        return str(api_key).strip()
+
+    try:
+        if hasattr(st, "secrets"):
+            secrets = st.secrets
+            for key in ("GROQ_API_KEY", "groq_api_key"):
+                value = secrets.get(key)
+                if value:
+                    return str(value).strip()
+    except Exception:
+        pass
+
+    return None
+
+
+GROQ_API_KEY = load_groq_api_key()
+if GROQ_API_KEY:
+    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
 
 def improve_writing(text, tone, level):
-    if helper_improve_writing is not None:
-        return helper_improve_writing(text, tone, level)
-
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        try:
-            if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
-                api_key = st.secrets["GROQ_API_KEY"]
-        except Exception:
-            pass
-
+    api_key = load_groq_api_key()
     if not api_key:
         raise RuntimeError(
             "GROQ_API_KEY is not set. Add it to a .env file or configure it as a Streamlit secret."
@@ -118,9 +122,7 @@ st.write(
     "Improve grammar, clarity, writing style, and tone using AI."
 )
 
-if os.getenv("GROQ_API_KEY") is None and not (
-    hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets
-):
+if not GROQ_API_KEY:
     st.error(
         "Missing GROQ_API_KEY. Add it to a .env file or configure it as a Streamlit secret before clicking Improve Writing."
     )
@@ -144,6 +146,10 @@ if st.button("✨ Improve Writing"):
 
     if text.strip() == "":
         st.warning("Please enter some text.")
+    elif not GROQ_API_KEY:
+        st.error(
+            "Missing GROQ_API_KEY. Add it to a .env file or configure it as a Streamlit secret before clicking Improve Writing."
+        )
     else:
 
         with st.spinner("Improving your writing..."):
